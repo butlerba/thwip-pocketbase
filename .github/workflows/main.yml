@@ -35,32 +35,9 @@ jobs:
 
             return latest.tag_name.replace('v','')
 
-      - name: Get latest package version
-        id: package
-        uses: actions/github-script@v7
-        env:
-          PACKAGE_NAME: pocketbase
-          PACKAGE_TYPE: container
-        with:
-          result-encoding: string
-          script: |
-            const {PACKAGE_NAME,PACKAGE_TYPE} = process.env;
-            const {data: packages} = await github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg({
-              org: context.repo.owner,
-              package_type: PACKAGE_TYPE,
-              package_name: PACKAGE_NAME,
-            })
-
-            const latest = packages.filter((p) =>
-              p.metadata.container.tags.includes("latest")
-            )[0];
-
-            return latest.metadata.container.tags.find((v) => /^v?\d+\.\d+\.\d+$/.test(v)) || '0.0.0'
-
   build:
     runs-on: ubuntu-latest
     needs: check
-    if: (needs.check.outputs.pocketbase != needs.check.outputs.package) || github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v2
 
