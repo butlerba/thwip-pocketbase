@@ -11,8 +11,8 @@ RUN wget https://github.com/pocketbase/pocketbase/releases/download/v${VERSION}/
     && unzip pocketbase_${VERSION}_${BUILDX_ARCH}.zip \
     && chmod +x /pocketbase
 
-FROM alpine:3
-RUN apk update && apk add ca-certificates && rm -rf /var/cache/apk/* && apk add imagemagick && apk add ffmpeg && apk add webp && apk add lib-webp7
+FROM ubuntu:latest
+RUN apt-get update && apt-get add ca-certificates && apt-get add unrar && apt-get add imagemagick && apt-get add ffmpeg && apt-get add webp && apt-get add lib-webp7
 
 EXPOSE 8090
 
