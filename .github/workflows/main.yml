@@ -22,7 +22,7 @@ jobs:
           # Username used to log against the Docker registry
           username: butlerba
           # Password or personal access token used to log against the Docker registry
-          password: ${{ GHCR_TOKEN }}
+          password: ${{ secrets.GHCR_TOKEN }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
