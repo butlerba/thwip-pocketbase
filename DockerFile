@@ -12,7 +12,7 @@ RUN wget https://github.com/pocketbase/pocketbase/releases/download/v${VERSION}/
     && chmod +x /pocketbase
 
 FROM ubuntu:latest
-RUN apt-get update && apt-get install ca-certificates -y && apt-get install unrar -y && apt-get install imagemagick -y && apt-get install ffmpeg -y && apt-get install webp -y && apt-get install lib-webp7 -y
+RUN apt-get update && apt-get install ca-certificates -y && apt-get install unrar -y && apt-get install imagemagick -y && apt-get install ffmpeg -y && apt-get install webp -y
 
 EXPOSE 8090
 
