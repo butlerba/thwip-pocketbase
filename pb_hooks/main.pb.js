@@ -274,6 +274,7 @@ routerAdd("GET", "/list-comics", async (c) => {
 
     const record = new Record(collection, {
       // bulk load the record data during initialization
+      id: fileName.replaceAll(" ", "_").replaceAll(".cbr", "").replaceAll(".cbz", "").toLowerCase(),
       fileName: fileName,
       matched: false,
       name: `${comicData.seriesName} #${comicData.issueNumber}`,
