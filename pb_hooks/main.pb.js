@@ -320,41 +320,21 @@ routerAdd("GET", "/list-comics", async (c) => {
       .map((f) => "/comics/temp/" + f.name());
   };
 
-  const createComicPageRecord = function (comicRecord, pageNumber, pageImage) {
-    // manually upload the page image to the comic record
-    const page = $filesystem.fileFromPath(pageImage);
+  const createComicPages = function (comicRecord, pageImages) {
+    const pages = [];
+    for (let i = 0; i < pageImages.length; i++) {
+      const page = $filesystem.fileFromPath(pageImages[i]);
 
-    // create the comic page record
-    const collection = $app.dao().findCollectionByNameOrId("comicPage");
-
-    const record = new Record(collection, {
-      // bulk load the record data during initialization
-      comic: comicRecord.id,
-      pageNumber: pageNumber,
-    });
-
-    $app.dao().saveRecord(record);
+      pages.push(page);
+    }
 
     // set up the form
-    const form = new RecordUpsertForm($app, record);
+    const form = new RecordUpsertForm($app, comicRecord);
 
     // manually upload file(s)
-    form.addFiles("image", page);
+    form.addFiles("pages", ...pages);
 
     form.submit();
-
-    return record;
-  };
-
-  const addPagesToComic = function (comicRecord, pages) {
-    // update the comic record with the pages
-    comicRecord.set(
-      "pages",
-      pages.map((p) => p.id)
-    );
-
-    // save the record
-    $app.dao().saveRecord(comicRecord);
 
     return comicRecord;
   };
@@ -406,20 +386,7 @@ routerAdd("GET", "/list-comics", async (c) => {
         // get all the non-cover images
         const allConvertedFiles = getAllConvertedFiles();
         console.log("allConvertedFiles: " + allConvertedFiles);
-        const pages = [];
-        // create a comic page record for each page
-        for (let j = 0; j < allConvertedFiles.length; j++) {
-          console.log("creating page record");
-          const newpage = createComicPageRecord(
-            comicRecord,
-            j,
-            allConvertedFiles[j]
-          );
-          pages.push(newpage);
-        }
-
-        // update the relationship between the comic and the pages
-        comicRecord = addPagesToComic(comicRecord, pages);
+        comicRecord = createComicPages(comicRecord, allConvertedFiles);
 
         moveFileToComplete(filesToProcess[i]);
 
