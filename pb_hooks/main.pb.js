@@ -69,7 +69,7 @@ routerAdd("GET", "/hello/:name", (c) => {
       data.issueNumber = nameandissueparts[issuepart];
       if (data.issueNumber.toString().length < 3) {
         const zeros = 3 - data.issueNumber.toString().length;
-        newissue = "";
+        let newissue = "";
         for (let i = 0; i < zeros; i++) {
           newissue += "0";
         }
@@ -365,7 +365,7 @@ routerAdd("GET", "/hello/:name", (c) => {
       const allFiles = getAllFiles("/comics/new");
   
       // take the first 5 files and process them
-      const filesToProcess = allFiles.slice(0, 5);
+      const filesToProcess = allFiles.slice(0, 15);
   
       for (let i = 0; i < filesToProcess.length; i++) {
         try {
