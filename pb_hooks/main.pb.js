@@ -105,14 +105,18 @@ cronAdd("comicMatch", "20 * * * *", async () => {
 
   let unmatchedComics = [];
   try {
-    unmatchedComics = $app.dao().findRecordsByFilter(
-      "comics",
-      "matched = {:matched} && needsManualMatch = false",
-      {
-        matched: false,
-      },
-      10
-    );
+    unmatchedComics = $app
+      .dao()
+      .findRecordsByFilter(
+        "comics",
+        "matched = {:matched} && needsManualMatch = false",
+        "created",
+        10,
+        0,
+        {
+          matched: false,
+        }
+      );
   } catch (e) {
     console.log("error getting unmatched comics: " + e);
   }

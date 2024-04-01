@@ -9,7 +9,7 @@ let Metron = {
       method: "GET",
       headers: {
         accept: "application/json",
-        Authorization: "Basic YnV0bGVyYmE6Y3phamthVEtFMjAxNSE=",
+        Authorization: process.env.METRON_AUTH,
       },
     });
     console.log(res.statusCode);
@@ -24,7 +24,7 @@ let Metron = {
       method: "GET",
       headers: {
         accept: "application/json",
-        Authorization: "Basic YnV0bGVyYmE6Y3phamthVEtFMjAxNSE=",
+        Authorization: process.env.METRON_AUTH,
       },
     });
     console.log(res.statusCode);
@@ -38,7 +38,7 @@ let Metron = {
       method: "GET",
       headers: {
         accept: "application/json",
-        Authorization: "Basic YnV0bGVyYmE6Y3phamthVEtFMjAxNSE=",
+        Authorization: process.env.METRON_AUTH,
       },
     });
     console.log(res.statusCode);
@@ -52,7 +52,7 @@ let Metron = {
       method: "GET",
       headers: {
         accept: "application/json",
-        Authorization: "Basic YnV0bGVyYmE6Y3phamthVEtFMjAxNSE=",
+        Authorization: process.env.METRON_AUTH,
       },
     });
     console.log(res.statusCode);
@@ -66,7 +66,7 @@ let Metron = {
       method: "GET",
       headers: {
         accept: "application/json",
-        Authorization: "Basic YnV0bGVyYmE6Y3phamthVEtFMjAxNSE=",
+        Authorization: process.env.METRON_AUTH,
       },
     });
     console.log(res.statusCode);
