@@ -325,10 +325,7 @@ cronAdd("comicMatch", "20 * * * *", async () => {
           comic.set("needsManualMatch", true);
           $app.dao().saveRecord(comic);
 
-          return c.json(200, {
-            message: "Success",
-            data: comic,
-          });
+          continue;
         }
       }
 
@@ -361,10 +358,7 @@ cronAdd("comicMatch", "20 * * * *", async () => {
         );
         $app.dao().saveRecord(series);
 
-        return c.json(200, {
-          message: "Success",
-          data: comic,
-        });
+        continue;
       }
 
       // get the issue details
@@ -502,11 +496,9 @@ cronAdd("comicMatch", "20 * * * *", async () => {
           $app.dao().saveRecord(series);
         }
       }
-
-      return c.json(200, { message: "Success", data: comic });
     } catch (e) {
       console.log("error: " + e);
-      return c.json(500, { message: "Error", error: e });
+      continue;
     }
   }
 
