@@ -111,7 +111,7 @@ cronAdd("comicMatch", "20 * * * *", async () => {
         "comics",
         "matched = {:matched} && needsManualMatch = false",
         "created",
-        10,
+        20,
         0,
         {
           matched: false,
@@ -511,15 +511,209 @@ routerAdd("GET", "/metron/search-series", async (c) => {
     const query = c.queryParam("query");
     const year = c.queryParam("year");
     // web encode the query
-    const webEncodedQuery = encodeURIComponent(query);
 
-    console.log("query: " + webEncodedQuery);
+    console.log("query: " + query);
     console.log("year: " + year);
     const metron = require(`${__hooks}/metron.js`);
 
-    const res = await metron.findSeries(webEncodedQuery, year);
+    const res = await metron.findSeries(query, year);
 
     return c.json(200, { message: "Success", data: res });
+  } catch (e) {
+    console.log("error: " + e);
+    return c.json(500, { message: "Error", error: e });
+  }
+});
+
+routerAdd("POST", "/metron/add-series", async (c) => {
+  try {
+    // get the body
+    const body = $apis.requestInfo(c).data;
+    console.log("body: " + body);
+    if (!body) {
+      return c.json(400, { message: "Error", error: "No body provided" });
+    }
+
+    const metron = require(`${__hooks}/metron.js`);
+    const utils = require(`${__hooks}/utils.js`);
+
+    // convert the body to json
+    //const jsonBody = JSON.parse(body);
+
+    // get the series id
+    const seriesId = body.seriesId;
+    // get any alliases values
+    const alliases = body.alliases;
+
+    // make sure the series doesn't already exist
+    let series;
+    try {
+      series = $app
+        .dao()
+        .findFirstRecordByFilter("series", "id = {:id}", { id: seriesId });
+    } catch (e) {
+      console.log("error finding series: " + e);
+    }
+
+    if (series) {
+      return c.json(400, {
+        message: "Error",
+        error: "Series already exists in the database",
+      });
+    }
+
+    // get the series details from metron
+    const metronSeriesDetails = metron.getSeries(seriesId);
+
+    // create the series record
+    series = new Record($app.dao().findCollectionByNameOrId("series"), {
+      id: metronSeriesDetails.id,
+      name: metronSeriesDetails.name,
+      startYear: metronSeriesDetails.year_began,
+      endYear: metronSeriesDetails.year_end,
+      ended: metronSeriesDetails.year_end ? true : false,
+      comicvineId: metronSeriesDetails.cv_id,
+      description: metronSeriesDetails.desc,
+    });
+
+    $app.dao().saveRecord(series);
+
+    // add the alliases
+    for (let i = 0; i < alliases.length; i++) {
+      const allias = new Record(
+        $app.dao().findCollectionByNameOrId("seriesAllias"),
+        {
+          series: series.get("id"),
+          name: alliases[i],
+        }
+      );
+
+      $app.dao().saveRecord(allias);
+
+      // update the series to include the allias
+      series.set("alliases", [...series.get("alliases"), allias.get("id")]);
+      $app.dao().saveRecord(series);
+    }
+
+    // get the cover image
+    console.log("looking for the first issue in the series");
+    // we need to search for the first issue in metron
+    const metronIssue = metron.findIssue(metronSeriesDetails.id, "1");
+
+    // now get the issue details
+    const metronIssueDetails = metron.getIssue(metronIssue.results[0].id);
+
+    // download the cover image for the issue
+    const coverImageReponse = $http.send({
+      url: metronIssueDetails.image,
+      method: "GET",
+    });
+    // make sure the temp_matching folder is created
+    $os.mkdirAll("/comics/temp_matching", 0o777);
+    const parts = metronIssueDetails.image.split("/");
+    // write the file to the fs
+    $os.writeFile(
+      `/comics/temp_matching/${parts[parts.length - 1]}`,
+      coverImageReponse.raw
+    );
+    // convert the file to our webp format and size
+    const destCoverFileName = `/comics/temp_matching/series_cover.webp`;
+    try {
+      const convertCover = $os.exec(
+        "cwebp",
+        "-q",
+        "60",
+        "-resize",
+        "400",
+        "600",
+        `/comics/temp_matching/${parts[parts.length - 1]}`,
+        "-o",
+        destCoverFileName
+      );
+      convertCover.run();
+    } catch (e) {
+      console.log("error converting cover to webp: " + e);
+    }
+
+    // load up the file
+    const convertedCoverFile = $filesystem.fileFromPath(destCoverFileName);
+
+    // start the series form
+    const form = new RecordUpsertForm($app, series);
+    // manually upload file(s)
+    form.addFiles("seriesImage", convertedCoverFile);
+
+    // validate and submit (internally it calls $app.dao().saveRecord(record) in a transaction)
+    form.submit();
+
+    // remove all the files in the temp_matching folder
+    const removeFiles = $os.exec("rm", "-rf", "/comics/temp_matching/*");
+    removeFiles.run();
+
+    // now we should look for any issues that have been marked as needing manual matching
+    // that have the same series name, and a year between the start and end year of the series
+    // and mark them as not needing manual matching
+    let possibleMatches = [];
+    try {
+      possibleMatches = $app
+        .dao()
+        .findRecordsByFilter(
+          "comics",
+          "needsManualMatch = true && name ~ {:seriesName}",
+          "created",
+          0,
+          0,
+          {
+            series: series.get("name"),
+          }
+        );
+    } catch (e) {
+      console.log("error finding possible matches: " + e);
+    }
+
+    for (let i = 0; i < possibleMatches.length; i++) {
+      const possibleMatch = possibleMatches[i];
+      possibleMatch.set("needsManualMatch", false);
+      $app.dao().saveRecord(possibleMatch);
+    }
+
+    return c.json(200, { message: "Success", data: series });
+  } catch (e) {
+    console.log("error: " + e);
+    return c.json(500, { message: "Error", error: e });
+  }
+});
+
+routerAdd("POST", "/reset-needs-manual-match", async (c) => {
+  try {
+    // make sure the header has the correct reset token
+    const resetToken = c.request().header.get("reset-token");
+    if (resetToken !== ProcessingInstruction.env.RESET_TOKEN) {
+      return c.json(401, { message: "Error", error: "Invalid reset token" });
+    }
+
+    let possibleMatches = [];
+    try {
+      possibleMatches = $app
+        .dao()
+        .findRecordsByFilter(
+          "comics",
+          "needsManualMatch = true",
+          "created",
+          0,
+          0
+        );
+    } catch (e) {
+      console.log("error finding possible matches: " + e);
+    }
+    console.log("possibleMatches: " + possibleMatches.length);
+    for (let i = 0; i < possibleMatches.length; i++) {
+      const possibleMatch = possibleMatches[i];
+      possibleMatch.set("needsManualMatch", false);
+      $app.dao().saveRecord(possibleMatch);
+    }
+
+    return c.json(200, { message: "Success" });
   } catch (e) {
     console.log("error: " + e);
     return c.json(500, { message: "Error", error: e });
