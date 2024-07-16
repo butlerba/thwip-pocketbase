@@ -165,6 +165,49 @@ cronAdd("comicMatch", "20 * * * *", async () => {
       }
 
       if (!series) {
+        let alliases = [];
+        try {
+          alliases = $app
+            .dao()
+            .findRecordsByFilter(
+              "seriesAllias",
+              "name = {:name}",
+              "created",
+              0,
+              0,
+              {
+                name: parsedFileName.seriesName.trim(),
+              }
+            );
+        } catch (e) {
+          console.log("error finding alliases: " + e);
+        }
+
+        if (alliases.length > 0) {
+          for (let i = 0; i < alliases.length; i++) {
+            const allias = alliases[i];
+            try {
+              series = $app
+                .dao()
+                .findFirstRecordByFilter(
+                  "series",
+                  "id = {:id} && startYear <= {:year} && (endYear >= {:year} || endYear = 0)",
+                  {
+                    id: allias.get("series"),
+                    year: parsedFileName.year,
+                  }
+                );
+            } catch (e) {
+              console.log("error finding series by allias: " + e);
+            }
+            if (series) {
+              break;
+            }
+          }
+        }
+      }
+
+      if (!series) {
         // search metron for the series name and year
         const metronRes = metron.findSeries(
           parsedFileName.seriesName,
@@ -342,7 +385,7 @@ cronAdd("comicMatch", "20 * * * *", async () => {
       // get find the issue from metron
       const metronIssue = metron.findIssue(
         series.get("id"),
-        parsedFileName.issueNumber
+        comic.get("issueNumber")
       );
       console.log("metronIssue: " + metronIssue);
 
@@ -758,7 +801,7 @@ routerAdd("GET", "metron/match-comic", async (c) => {
         .dao()
         .findFirstRecordByFilter(
           "series",
-          "(name = {:name} || alliases.name = {:name}) && startYear <= {:year} && (endYear >= {:year} || endYear = 0)",
+          "(name = {:name} || alliases.name = {:name}) && ((startYear <= {:year} && (endYear >= {:year}) || (startYear <= {:year} && endYear = 0))",
           {
             name: parsedFileName.seriesName,
             year: parsedFileName.year,
@@ -766,6 +809,51 @@ routerAdd("GET", "metron/match-comic", async (c) => {
         );
     } catch (e) {
       console.log("error finding series: " + e);
+    }
+
+    if (!series) {
+      let alliases = [];
+      try {
+        alliases = $app
+          .dao()
+          .findRecordsByFilter(
+            "seriesAllias",
+            "name = {:name}",
+            "created",
+            0,
+            0,
+            {
+              name: parsedFileName.seriesName,
+            }
+          );
+      } catch (e) {
+        console.log("error finding alliases: " + e);
+      }
+
+      console.log("alliases: " + alliases.length);
+
+      if (alliases.length > 0) {
+        for (let i = 0; i < alliases.length; i++) {
+          const allias = alliases[i];
+          try {
+            series = $app
+              .dao()
+              .findFirstRecordByFilter(
+                "series",
+                "id = {:id} && ((startYear <= {:year} && (endYear >= {:year}) || (startYear <= {:year} && endYear = 0))",
+                {
+                  id: allias.get("series"),
+                  year: parsedFileName.year,
+                }
+              );
+          } catch (e) {
+            console.log("error finding series by allias: " + e);
+          }
+          if (series) {
+            break;
+          }
+        }
+      }
     }
 
     if (!series) {
@@ -928,6 +1016,7 @@ routerAdd("GET", "metron/match-comic", async (c) => {
         return c.json(200, {
           message: "Success",
           data: comic,
+          details: "Too many metron results: " + metronRes.results.length,
         });
       }
     }
@@ -945,9 +1034,9 @@ routerAdd("GET", "metron/match-comic", async (c) => {
     // get find the issue from metron
     const metronIssue = metron.findIssue(
       series.get("id"),
-      parsedFileName.issueNumber
+      comic.get("issueNumber")
     );
-    console.log("metronIssue: " + metronIssue);
+    console.log("metronIssue: " + metronIssue, JSON.stringify(metronIssue));
 
     if (!metronIssue.results || metronIssue.results.length == 0) {
       // update the comic record to say it needs manual matching
@@ -964,11 +1053,358 @@ routerAdd("GET", "metron/match-comic", async (c) => {
       return c.json(200, {
         message: "Success",
         data: comic,
+        details: "No metron results for issue",
       });
     }
 
     // get the issue details
     const metronIssueDetails = metron.getIssue(metronIssue.results[0].id);
+
+    // update the issue record
+    comic.set("metronId", metronIssueDetails.id);
+    comic.set("comicvineId", metronIssueDetails.cv_id);
+    comic.set("description", metronIssueDetails.desc);
+    comic.set("publishDate", metronIssueDetails.cover_date);
+
+    $app.dao().saveRecord(comic);
+
+    // for each of the characters in the issue, see if they exist in the database
+    // if they do, add them to the comic record, and add the issue to the character record
+    // and to the series, and add the series to the character record
+    for (let i = 0; i < metronIssueDetails.characters.length; i++) {
+      const characterId = metronIssueDetails.characters[i].id.toString();
+
+      let character;
+      try {
+        character = $app
+          .dao()
+          .findFirstRecordByFilter("characters", "id = {:id}", {
+            id: characterId,
+          });
+      } catch (e) {
+        console.log("error finding character (id: " + characterId + "): " + e);
+      }
+
+      if (!character) {
+        // get the character details from metron
+        const metronCharacterDetails = metron.getCharacter(characterId);
+        console.log("character name: " + metronCharacterDetails.name);
+        // create the character record
+        character = new Record(
+          $app.dao().findCollectionByNameOrId("characters"),
+          {
+            id: metronCharacterDetails.id,
+            name: metronCharacterDetails.name,
+            description: metronCharacterDetails.desc,
+            comicvineId:
+              metronCharacterDetails.cv_id ??
+              `unknown-${metronCharacterDetails.id}`,
+          }
+        );
+
+        $app.dao().saveRecord(character);
+
+        // get the character image
+        const characterImage = $http.send({
+          url: metronCharacterDetails.image,
+          method: "GET",
+        });
+
+        // make sure the temp_matching folder is created
+        $os.mkdirAll("/comics/temp_matching", 0o777);
+
+        const parts = metronCharacterDetails.image.split("/");
+
+        // write the file to the fs
+        $os.writeFile(
+          `/comics/temp_matching/${parts[parts.length - 1]}`,
+          characterImage.raw
+        );
+        console.log("wrote file");
+        // convert the file to our webp format and size
+        const destCharacterFileName = `/comics/temp_matching/${character
+          .get("name")
+          .replace(" ", "_")
+          .toLowerCase()}.webp`;
+        try {
+          const convertCharacter = $os.exec(
+            "cwebp",
+            "-q",
+            "60",
+            "-resize",
+            "400",
+            "600",
+            `/comics/temp_matching/${parts[parts.length - 1]}`,
+            "-o",
+            destCharacterFileName
+          );
+          convertCharacter.run();
+        } catch (e) {
+          console.log("error converting character to webp: " + e);
+        }
+
+        // load up the file
+        const convertedCharacterFile = $filesystem.fileFromPath(
+          destCharacterFileName
+        );
+
+        // start the character form
+        const form = new RecordUpsertForm($app, character);
+        // manually upload file(s)
+        form.addFiles("image", convertedCharacterFile);
+
+        // validate and submit (internally it calls $app.dao().saveRecord(record) in a transaction)
+        form.submit();
+      }
+
+      console.log("adding character to comic");
+      // add the character to the comic
+      comic.set("characters", [
+        ...comic.get("characters"),
+        character.get("id"),
+      ]);
+      $app.dao().saveRecord(comic);
+
+      console.log("adding comic to character");
+      // add the comic to the character
+      character.set("issues", [...character.get("issues"), comic.get("id")]);
+      $app.dao().saveRecord(character);
+
+      // add the series to the character
+      if (character.get("series").indexOf(series.get("id")) < 0) {
+        console.log("adding character to series");
+        character.set("series", [...character.get("series"), series.get("id")]);
+        $app.dao().saveRecord(character);
+      }
+
+      if (series.get("characters").indexOf(character.get("id")) < 0) {
+        console.log("adding character to series");
+        // add the character to the series
+        series.set("characters", [
+          ...series.get("characters"),
+          character.get("id"),
+        ]);
+        $app.dao().saveRecord(series);
+      }
+    }
+
+    return c.json(200, { message: "Success", data: comic });
+  } catch (e) {
+    console.log("error: " + e);
+    return c.json(500, { message: "Error", error: e });
+  }
+});
+
+routerAdd("POST", "/get-comic-series-possible-matches", async (c) => {
+  try {
+    // get the body
+    const body = $apis.requestInfo(c).data;
+    console.log("body: " + JSON.stringify(body));
+    if (!body) {
+      return c.json(400, { message: "Error", error: "No body provided" });
+    }
+    if (!body.comicId) {
+      return c.json(400, { message: "Error", error: "No comicId provided" });
+    }
+
+    const metron = require(`${__hooks}/metron.js`);
+    const utils = require(`${__hooks}/utils.js`);
+
+    // get the comic based on the id
+    const comic = $app.dao().findFirstRecordByFilter("comics", "id = {:id}", {
+      id: body.comicId,
+    });
+
+    if (!comic) {
+      return c.json(400, { message: "Error", error: "Comic not found" });
+    }
+
+    // parse the file name to get the series name, issue number, and year
+    const parsedFileName = utils.parseFileName(comic.get("fileName"));
+    console.log(
+      "parsedFileName: " +
+        parsedFileName.seriesName +
+        " - " +
+        parsedFileName.issueNumber +
+        " - " +
+        parsedFileName.year
+    );
+
+    // see if there is a either direct series name match in the database, or a series allias match
+    // if there is, update the comic record with the series id
+    // if there isn't, search metron for the series name and year
+    let series;
+    try {
+      series = $app
+        .dao()
+        .findFirstRecordByFilter(
+          "series",
+          "(name = {:name} || alliases.name = {:name}) && startYear <= {:year} && (endYear >= {:year} || endYear = 0)",
+          {
+            name: parsedFileName.seriesName.trim(),
+            year: parsedFileName.year,
+          }
+        );
+    } catch (e) {
+      console.log("error finding series: " + e);
+    }
+
+    if (!series) {
+      let alliases = [];
+      try {
+        alliases = $app
+          .dao()
+          .findRecordsByFilter(
+            "seriesAllias",
+            "name = {:name}",
+            "created",
+            0,
+            0,
+            {
+              name: parsedFileName.seriesName.trim(),
+            }
+          );
+      } catch (e) {
+        console.log("error finding alliases: " + e);
+      }
+
+      if (alliases.length > 0) {
+        for (let i = 0; i < alliases.length; i++) {
+          const allias = alliases[i];
+          try {
+            series = $app
+              .dao()
+              .findFirstRecordByFilter(
+                "series",
+                "id = {:id} && startYear <= {:year} && (endYear >= {:year} || endYear = 0)",
+                {
+                  id: allias.get("series"),
+                  year: parsedFileName.year,
+                }
+              );
+          } catch (e) {
+            console.log("error finding series by allias: " + e);
+          }
+          if (series) {
+            break;
+          }
+        }
+      }
+    }
+
+    return c.json(200, { message: "Success", data: series });
+  } catch (e) {
+    console.log("error: " + e);
+    return c.json(500, { message: "Error", error: e });
+  }
+});
+
+routerAdd("POST", "metron/match-comic-to-series", async (c) => {
+  try {
+    const body = $apis.requestInfo(c).data;
+    console.log("body: " + JSON.stringify(body));
+    if (!body) {
+      return c.json(400, { message: "Error", error: "No body provided" });
+    }
+    if (!body.comicId) {
+      return c.json(400, { message: "Error", error: "No comicId provided" });
+    }
+    if (!body.seriesId) {
+      return c.json(400, { message: "Error", error: "No seriesId provided" });
+    }
+
+    const metron = require(`${__hooks}/metron.js`);
+    const utils = require(`${__hooks}/utils.js`);
+    // get the first non-matched comic from the db
+    const comic = $app.dao().findFirstRecordByFilter("comics", "id = {:id}", {
+      id: body.comicId,
+    });
+
+    if (!comic) {
+      return c.json(400, { message: "Error", error: "No comic found" });
+    }
+
+    console.log("comic: " + comic.get("fileName"));
+
+    // parse the file name to get the series name, issue number, and year
+    const parsedFileName = utils.parseFileName(comic.get("fileName"));
+    console.log(
+      "parsedFileName: " +
+        parsedFileName.seriesName +
+        " - " +
+        parsedFileName.issueNumber +
+        " - " +
+        parsedFileName.year
+    );
+
+    // see if there is a either direct series name match in the database, or a series allias match
+    // if there is, update the comic record with the series id
+    // if there isn't, search metron for the series name and year
+    const series = $app.dao().findFirstRecordByFilter("series", "id = {:id}", {
+      id: body.seriesId,
+    });
+
+    if (!series) {
+      return c.json(400, { message: "Error", error: "Series not found" });
+    }
+
+    // add the comic to the series
+    series.set("issues", [...series.get("issues"), comic.get("id")]);
+
+    // save the series
+    $app.dao().saveRecord(series);
+
+    // update the comic record with the series id
+    comic.set("series", series.get("id"));
+    comic.set("matched", true);
+    comic.set("needsManualMatch", false);
+
+    let metronIssueDetails;
+
+    if (!body.comicMentronId) {
+      // get find the issue from metron
+      const metronIssue = metron.findIssue(
+        series.get("id"),
+        comic.get("issueNumber")
+      );
+      console.log("metronIssue: " + metronIssue, JSON.stringify(metronIssue));
+
+      if (!metronIssue.results || metronIssue.results.length == 0) {
+        // update the comic record to say it needs manual matching
+        comic.set("needsManualMatch", true);
+        $app.dao().saveRecord(comic);
+
+        // remove the comic from the series
+        series.set(
+          "issues",
+          series.get("issues").filter((i) => i !== comic.get("id"))
+        );
+        $app.dao().saveRecord(series);
+
+        return c.json(200, {
+          message: "Success",
+          data: comic,
+          details: "No metron results for issue",
+        });
+      }
+
+      // get the issue details
+      metronIssueDetails = metron.getIssue(metronIssue.results[0].id);
+    } else {
+      // get the issue details
+      metronIssueDetails = metron.getIssue(body.comicMentronId);
+    }
+
+    if (!metronIssueDetails) {
+      // update the comic record to say it needs manual matching
+      comic.set("needsManualMatch", true);
+      $app.dao().saveRecord(comic);
+      return c.json(200, {
+        message: "Success",
+        data: comic,
+        details: "No metron results for issue",
+      });
+    }
 
     // update the issue record
     comic.set("metronId", metronIssueDetails.id);

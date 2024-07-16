@@ -32,7 +32,7 @@ let Metron = {
     sleep(5000);
     return res.json;
   },
-  findIssue: (seriesId, issueNumber) => {
+  findIssue: (seriesId, issueNumber, year) => {
     const res = $http.send({
       url: `https://metron.cloud/api/issue/?series_id=${seriesId}&number=${+issueNumber}`,
       method: "GET",
