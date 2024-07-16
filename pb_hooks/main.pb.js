@@ -731,7 +731,7 @@ routerAdd("POST", "/reset-needs-manual-match", async (c) => {
   try {
     // make sure the header has the correct reset token
     const resetToken = c.request().header.get("reset-token");
-    if (resetToken !== ProcessingInstruction.env.RESET_TOKEN) {
+    if (resetToken !== process.env.RESET_TOKEN) {
       return c.json(401, { message: "Error", error: "Invalid reset token" });
     }
 
